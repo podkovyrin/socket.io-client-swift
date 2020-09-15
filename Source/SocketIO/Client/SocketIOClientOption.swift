@@ -90,9 +90,6 @@ public enum SocketIOClientOption : ClientOption {
     /// Set `true` if your server is using secure transports.
     case secure(Bool)
 
-    /// Allows you to set which certs are valid. Useful for SSL pinning.
-    case security(SSLSecurity)
-
     /// If you're using a self-signed set. Only use for development.
     case selfSigned(Bool)
 
@@ -142,8 +139,6 @@ public enum SocketIOClientOption : ClientOption {
             description = "secure"
         case .selfSigned:
             description = "selfSigned"
-        case .security:
-            description = "security"
         case .sessionDelegate:
             description = "sessionDelegate"
         case .enableSOCKSProxy:
@@ -191,8 +186,6 @@ public enum SocketIOClientOption : ClientOption {
             value = factor
         case let .secure(secure):
             value = secure
-        case let .security(security):
-            value = security
         case let .selfSigned(signed):
             value = signed
         case let .sessionDelegate(delegate):

@@ -27,7 +27,7 @@ import Foundation
 import Starscream
 
 /// Specifies a SocketEngine.
-@objc public protocol SocketEngineSpec {
+public protocol SocketEngineSpec: AnyObject {
     // MARK: Properties
 
     /// The client for this engine.
@@ -87,6 +87,8 @@ import Starscream
 
     /// The WebSocket for this engine.
     var ws: WebSocket? { get }
+    
+    var isWebSocketConnected: Bool { get }
 
     // MARK: Initializers
 

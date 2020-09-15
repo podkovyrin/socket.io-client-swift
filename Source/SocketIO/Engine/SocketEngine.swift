@@ -28,7 +28,7 @@ import Starscream
 
 /// The class that handles the engine.io protocol and transports.
 /// See `SocketEnginePollable` and `SocketEngineWebsocket` for transport specific methods.
-open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, SocketEngineWebsocket, ConfigSettable {
+open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, SocketEngineWebsocket, ConfigSettable, WebSocketDelegate {
     // MARK: Properties
 
     private static let logType = "SocketEngine"
@@ -119,6 +119,8 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
 
     /// The WebSocket for this engine.
     public private(set) var ws: WebSocket?
+    
+    public private(set) var isWebSocketConnected = false
 
     /// The client for this engine.
     public weak var client: SocketEngineClient?
@@ -138,7 +140,6 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
     private var pongsMissedMax = 0
     private var probeWait = ProbeWaitQueue()
     private var secure = false
-    private var security: SocketIO.SSLSecurity?
     private var selfSigned = false
 
     // MARK: Initializers
@@ -287,44 +288,12 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
 
         addHeaders(to: &req, includingCookies: session?.configuration.httpCookieStorage?.cookies(for: urlPollingWithSid))
 
-        let stream = FoundationStream()
-        stream.enableSOCKSProxy = enableSOCKSProxy
-        ws = WebSocket(request: req, stream: stream)
+        let compressionHandler = compress ? WSCompression() : nil
+        ws = WebSocket(request: req,
+                       certPinner: FoundationSecurity(allowSelfSigned: selfSigned),
+                       compressionHandler: compressionHandler)
         ws?.callbackQueue = engineQueue
-        ws?.enableCompression = compress
-        ws?.disableSSLCertValidation = selfSigned
-        ws?.security = security?.security
-
-        ws?.onConnect = {[weak self] in
-            guard let this = self else { return }
-
-            this.websocketDidConnect()
-        }
-
-        ws?.onDisconnect = {[weak self] error in
-            guard let this = self else { return }
-
-            this.websocketDidDisconnect(error: error)
-        }
-
-        ws?.onData = {[weak self] data in
-            guard let this = self else { return }
-
-            this.parseEngineData(data)
-        }
-
-        ws?.onText = {[weak self] message in
-            guard let this = self else { return }
-
-            this.parseEngineMessage(message)
-        }
-
-        ws?.onHttpResponseHeaders = {[weak self] headers in
-            guard let this = self else { return }
-
-            this.client?.engineDidWebsocketUpgrade(headers: headers)
-        }
-
+        ws?.delegate = self
         ws?.connect()
     }
 
@@ -595,8 +564,6 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
                 self.secure = secure
             case let .selfSigned(selfSigned):
                 self.selfSigned = selfSigned
-            case let .security(security):
-                self.security = security
             case .compress:
                 self.compress = true
             case .enableSOCKSProxy:
@@ -609,7 +576,7 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
 
     // Moves from long-polling to websockets
     private func upgradeTransport() {
-        if ws?.isConnected ?? false {
+        if isWebSocketConnected {
             DefaultSocketLogger.Logger.log("Upgrading transport to WebSockets", type: SocketEngine.logType)
 
             fastUpgrade = true
@@ -661,7 +628,7 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
         }
     }
 
-    private func websocketDidDisconnect(error: Error?) {
+    private func websocketDidDisconnect(reason: String, code: UInt16) {
         probing = false
 
         if closed {
@@ -678,13 +645,47 @@ open class SocketEngine : NSObject, URLSessionDelegate, SocketEnginePollable, So
 
         connected = false
         polling = true
-
-        if let error = error as? WSError {
-            didError(reason: "\(error.message). code=\(error.code), type=\(error.type)")
-        } else if let reason = error?.localizedDescription {
-            didError(reason: reason)
-        } else {
-            client?.engineDidClose(reason: "Socket Disconnected")
+        
+        didError(reason: "Socket Disconnected: \(reason), code: \(code)")
+    }
+    
+    // MARK: WebSocketDelegate
+    
+    public func didReceive(event: WebSocketEvent, client: WebSocket) {
+        switch event {
+        case .connected(_):
+            isWebSocketConnected = true
+            websocketDidConnect()
+        case .disconnected(let reason, let code):
+            isWebSocketConnected = false
+            websocketDidDisconnect(reason: reason, code: code)
+        case .text(let string):
+            parseEngineMessage(string)
+        case .binary(let data):
+            parseEngineData(data)
+        case .ping(_):
+            break
+        case .pong(_):
+            break
+        case .viabilityChanged(_):
+            break
+        case .reconnectSuggested(_):
+            break
+        case .cancelled:
+            isWebSocketConnected = false
+        case .error(let error):
+            isWebSocketConnected = false
+            if let error = error {
+                if let error = error as? WSError {
+                    websocketDidDisconnect(reason: error.message, code: error.code)
+                } else {
+                    let error = error as NSError
+                    websocketDidDisconnect(reason: error.localizedDescription, code: UInt16(error.code))
+                }
+            }
+            else {
+                websocketDidDisconnect(reason: "Socket Disconnected", code: 666)
+            }
         }
     }
 

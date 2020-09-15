@@ -64,7 +64,6 @@ open class SocketIOClient : NSObject, SocketIOClientSpec {
     public private(set) var handlers = [SocketEventHandler]()
 
     /// The manager for this socket.
-    @objc
     public private(set) weak var manager: SocketManagerSpec?
 
     /// A view into this socket where emits do not check for binary data.
@@ -99,7 +98,6 @@ open class SocketIOClient : NSObject, SocketIOClientSpec {
     ///
     /// - parameter manager: The manager for this socket.
     /// - parameter nsp: The namespace of the socket.
-    @objc
     public init(manager: SocketManagerSpec, nsp: String) {
         self.manager = manager
         self.nsp = nsp

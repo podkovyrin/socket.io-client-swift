@@ -496,6 +496,7 @@ class TestEngine : SocketEngineSpec {
     private(set) var urlWebSocket = URL(string: "http://localhost/")!
     private(set) var websocket = false
     private(set) var ws: WebSocket? = nil
+    private(set) var isWebSocketConnected = false
 
     required init(client: SocketEngineClient, url: URL, options: [String: Any]?) {
         self.client = client
